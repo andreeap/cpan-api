@@ -975,7 +975,7 @@ sub autocomplete {
         {
             custom_score => {
                 query => { bool => { should => $should } },
-                script => "_score - doc['documentation'].value.length()/100",
+                script => "_source.documentation.value.length()/100",
             }
         }
         )->filter(
@@ -988,7 +988,7 @@ sub autocomplete {
                 { term   => { 'file.status'     => 'latest' } },
             ]
         }
-        )->sort( [ 'documentation', '_score' ] );
+        )->sort( [ '_score', 'documentation' ] );
 }
 
 __PACKAGE__->meta->make_immutable;
