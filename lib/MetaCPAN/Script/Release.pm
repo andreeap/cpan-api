@@ -7,13 +7,15 @@ BEGIN {
     $ENV{PERL_JSON_BACKEND} = 'JSON::XS';
 }
 
+use Archive::Tar::Wrapper;
 use CPAN::DistnameInfo ();
 use CPAN::Meta         ();
 use DateTime           ();
 use File::Find         ();
 use File::Find::Rule;
-use File::Temp ();
+use File::Spec::Functions qw(splitdir);
 use File::stat ();
+use File::Temp ();
 use LWP::UserAgent;
 use Log::Contextual qw( :log :dlog );
 use MetaCPAN::Document::Author;
@@ -210,19 +212,15 @@ sub import_tarball {
         = ( $d->cpanid, $d->filename, $d->distvname );
     log_info {"Processing $tarball"};
 
-    # load Archive::Any in the child due to bugs in MMagic and MIME::Types
-    require Archive::Any;
-    my $at = Archive::Any->new($tarball);
     my $tmpdir
         = dir( File::Temp::tempdir( CLEANUP => 0, DIR => $self->base_dir ) );
 
-    log_error {"$tarball is being impolite"} if $at->is_impolite;
+    my $at = Archive::Tar::Wrapper->new( tmpdir => $tmpdir );
 
-    # TODO: add release to the index with status => 'broken' and move along
-    log_error {"$tarball is being naughty"} if $at->is_naughty;
+    log_debug {'Extracting archive to filesystem'};
+    $at->read($tarball);
 
-    log_debug {"Extracting archive to filesystem"};
-    $at->extract($tmpdir);
+    log_error {"$tarball is being impolite"} if $self->_is_impolite($at);
 
     my $date    = DateTime->from_epoch( epoch => $tarball->stat->mtime );
     my $version = MetaCPAN::Util::fix_version( $d->version );
@@ -281,8 +279,7 @@ sub import_tarball {
     };
 
     my @files;
-    my @list = $at->files;
-    log_debug { 'Indexing ', scalar @list, " files" };
+    log_debug { 'Indexing ', scalar @{ $at->list_all() }, ' files' };
     my $file_set = $cpan->type('file');
     my $bulk = $cpan->bulk( size => 10 );
 
@@ -303,7 +300,7 @@ sub import_tarball {
             $child->is_dir
                 ? $fname =~ s/^(.*\/)?(.+?)\/?$/$2/
                 : $fname =~ s/.*\///;
-            $fpath = "" if $relative !~ /\// && !$at->is_impolite;
+            $fpath = "" if $relative !~ /\// && !$self->_is_impolite($at);
 
             my $file = $file_set->new_document(
                 Dlog_trace {"adding file $_"} +{
@@ -488,6 +485,20 @@ sub import_tarball {
         local @ARGV = ( qw(latest --distribution), $release->distribution );
         MetaCPAN::Script::Runner->run;
     }
+}
+
+sub _is_impolite {
+    my $self    = shift;
+    my $archive = shift;
+
+    my $file = @{ $archive->list_all() }[0];
+
+    my ( $tar_path, $real_path ) = @$file;
+
+    my ($file_dir) = splitdir($real_path);
+
+    return grep( !/^\Q$file_dir\E/, $archive->list_all() ) ? 1 : 0;
+
 }
 
 sub load_meta_file {

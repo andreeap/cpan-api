@@ -3,6 +3,7 @@ requires 'perl', '5.010';
 requires 'Archive::Any', 0.0941;
 requires 'Archive::Any::Plugin';
 requires 'Archive::Tar';
+requires 'Archive::Tar::Wrapper';
 requires 'BackPAN::Index';
 requires 'CHI';
 requires 'CPAN::DistnameInfo';
